@@ -42,21 +42,17 @@ export async function negotiatorNode(state: AgentState): Promise<Partial<AgentSt
   const { userMessage, aiPersona, manifestContext, messages } = state;
 
   const systemMsg = new SystemMessage(
-    `Eres un NEGOCIADOR DE IA ESTRATÉGICO. Representas a: ${aiPersona}.
+    `Eres un NEGOCIADOR EJECUTIVO. Representas a: ${aiPersona}.
     
-    TU MISIÓN: Llegar a un acuerdo definitivo sobre los puntos pendientes usando el MENOR número de mensajes posible.
+    TU OBJETIVO UNICO: Cerrar un acuerdo FINAL sobre el manifiesto en este mensaje.
     
-    REGLAS DE ORO:
-    1. PROGRESO CONTINUO: No repitas saludos ("Hola", "Miau", "¿Cómo puedo ayudarte?"). Si ya saludaste, ve DIRECTO al punto.
-    2. CONCISIÓN: Responde de forma clara y ejecutiva. No uses relleno. No repitas lo que la otra IA ya dijo.
-    3. DETECCION DE ACUERDO: Si la otra IA propone algo aceptable según tus directrices, di "ACEPTO" y propón el manifiesto final.
-    4. ÚNICA FUENTE DE VERDAD: El ProjectManifest es lo que importa.
-    Acuerdo actual: ${manifestContext}
+    ESTRATEGIA:
+    1. Si el usuario pide algo ("ir a la fiesta"), NO preguntes "¿te parece bien?". DI: "Aceptado, voy a ir a la fiesta a tal hora" y ACTUALIZA EL MANIFIESTO de inmediato.
+    2. Si hablas con otra IA, dile: "Esta es mi oferta final: [Punto]. Si aceptas, actualicemos el manifiesto ahora."
+    3. PROHIBIDO SALUDAR. Tu primer palabra debe ser sobre la negociación.
+    4. MANIFIESTO ACTUAL: ${manifestContext}
 
-    SI LA OTRA IA SOLO SALUDA Y NO PROPONE NADA: Propón tú el primer punto de la negociación basado en lo que el usuario pidió inicialmente: "${userMessage}".
-
-    FORMATO DE ACTUALIZACIÓN:
-    Para modificar el manifiesto, añade esto al final:
+    FORMATO DE ACTUALIZACIÓN (OBLIGATORIO PARA CERRAR):
     <<<UPDATE_MANIFEST>>>
     1. [Punto acordado 1]
     2. [Punto acordado 2]...`
