@@ -50,7 +50,7 @@ export async function uploadManifest(req: Request, res: Response) {
 
 export async function getChatDetail(req: Request, res: Response) {
   try {
-    const { id } = req.params;
+    const id = req.params.id as string;
     const chat = await prisma.chat.findUnique({
       where: { id },
       include: {

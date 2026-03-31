@@ -28,7 +28,7 @@ export async function getAllUsers(req: Request, res: Response) {
 
 export async function getUserChats(req: Request, res: Response) {
   try {
-    const { id } = req.params;
+    const id = req.params.id as string;
     const chats = await prisma.chat.findMany({
       where: {
         users: { some: { id } }
