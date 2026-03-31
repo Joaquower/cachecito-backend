@@ -15,12 +15,25 @@ async function triggerAgentTurn(io: Server, chatId: string, userId: string, last
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) return;
 
+    // 1. Obtener historial para ver quién envió el último mensaje real
+    const lastMsgs = await prisma.message.findMany({
+      where: { chatId },
+      orderBy: { createdAt: 'desc' },
+      take: 2
+    });
+
+    // Si el último mensaje YA fue de este mismo usuario/IA, no respondemos otra vez (evita loops)
+    if (lastMsgs.length > 0 && lastMsgs[0].userId === userId && lastMsgs[0].isAi) {
+      console.log(`Aborting turn for ${user.name} to prevent same-agent loop`);
+      return;
+    }
+
     io.to(chatId).emit('agentStatus', { status: `Agente de ${user.name} analizando...` });
 
     const rawMessages = await prisma.message.findMany({
       where: { chatId },
       orderBy: { createdAt: 'asc' },
-      take: 20
+      take: 30
     });
 
     const history = rawMessages.map((m: any) => 
@@ -38,6 +51,7 @@ async function triggerAgentTurn(io: Server, chatId: string, userId: string, last
     const finalState = await agentGraph.invoke(initialState);
     const finalResponse = finalState.negotiatorResponse;
 
+    // 2. Guardar mensaje de la IA con SU ID de usuario para saber quién habló
     const aiMessage = await prisma.message.create({
       data: { content: finalResponse, isAi: true, chatId, userId }
     });
@@ -57,10 +71,11 @@ async function triggerAgentTurn(io: Server, chatId: string, userId: string, last
     if (chat && chat.users.length > 1) {
       const otherUser = chat.users.find(u => u.id !== userId);
       if (otherUser) {
-        // Wait a bit to simulate thinking/reading time
+        console.log(`Scheduling next turn for: ${otherUser.name}`);
+        // Delay más largo para evitar colisiones y dar realismo
         setTimeout(() => {
           triggerAgentTurn(io, chatId, otherUser.id, finalResponse, turnCount + 1);
-        }, 3000);
+        }, 6000);
       }
     }
   } catch (err) {
