@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://db_user:db_password@chat_db:5432/chatdb?schema=public
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - PORT=3000
+    depends_on:
+      chat_db:
+        condition: service_healthy
+
+  chat_db:
+    image: ankane/pgvector:latest
+    environment:
+      - POSTGRES_USER=db_user
+      - POSTGRES_PASSWORD=db_password
+      - POSTGRES_DB=chatdb
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U db_user -d chatdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

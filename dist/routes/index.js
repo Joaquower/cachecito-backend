@@ -1,0 +1,10 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const user_controller_1 = require("../controllers/user.controller");
+const chat_controller_1 = require("../controllers/chat.controller");
+const router = (0, express_1.Router)();
+router.post('/users', user_controller_1.registerUser);
+router.post('/chats', chat_controller_1.createChat);
+router.post('/chats/:id/manifest', chat_controller_1.uploadManifest);
+exports.default = router;

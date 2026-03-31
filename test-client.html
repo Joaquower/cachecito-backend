@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent API & Socket Tester</title>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <style>
+    body { font-family: -apple-system, sans-serif; background: #f4f4f5; margin: 0; padding: 20px; color: #333; }
+    .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    h1 { font-size: 24px; margin-top: 0; }
+    .section { border: 1px solid #e5e7eb; padding: 15px; margin-bottom: 20px; border-radius: 6px; }
+    .section h2 { font-size: 18px; margin-top: 0; }
+    label { font-weight: bold; display: block; margin-top: 10px; font-size: 14px; }
+    input, textarea { width: 100%; padding: 8px; margin-top: 5px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+    button { background: #3b82f6; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; margin-top: 10px; font-weight: bold; }
+    button:hover { background: #2563eb; }
+    #logs { background: #1f2937; color: #10b981; padding: 15px; height: 300px; overflow-y: scroll; border-radius: 6px; font-family: monospace; white-space: pre-wrap; font-size: 13px; line-height: 1.4; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>Agent Tester (Backend Only)</h1>
+  <p>Run the backend (<code>npm run dev</code> on port 3000) before using this form.</p>
+
+  <div class="section">
+    <h2>1. Create Users (REST)</h2>
+    <div style="display: flex; gap: 10px;">
+      <div style="flex: 1;">
+        <h3>User A (You)</h3>
+        <label>Name:</label> <input type="text" id="userNameA" value="Joaquin">
+        <label>AI Persona:</label> <input type="text" id="aiPersonaA" value="Negociador proactivo, busca eficiencia.">
+        <button onclick="createUser('A')">Create User A</button>
+        <p>ID A: <span id="userIdA" style="font-weight:bold; color:red;">None</span></p>
+      </div>
+      <div style="flex: 1;">
+        <h3>User B (Arturo)</h3>
+        <label>Name:</label> <input type="text" id="userNameB" value="Arturo">
+        <label>AI Persona:</label> <input type="text" id="aiPersonaB" value="Muy ocupado, solo puede mañanas muy tempranas.">
+        <button onclick="createUser('B')">Create User B</button>
+        <p>ID B: <span id="userIdB" style="font-weight:bold; color:red;">None</span></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>2. Create Group Chat (REST)</h2>
+    <p>This will create a chat with BOTH users to test AI-to-AI.</p>
+    <button onclick="createChat()">Create Chat (A + B)</button>
+    <p>Chat ID: <span id="chatIdDisplay" style="font-weight:bold; color:red;">None</span></p>
+  </div>
+
+  <div class="section">
+    <h2>3. Initial Manifest (REST)</h2>
+    <label>Context/Agreement:</label>
+    <textarea id="manifestContent" rows="3">1. La reunión está pendiente de definir.
+2. Lugar por confirmar.</textarea>
+    <button onclick="uploadManifest()">Set Initial Manifest</button>
+  </div>
+
+  <div class="section">
+    <h2>4. WebSockets</h2>
+    <button onclick="connectSocket()">Connect & Join</button>
+  </div>
+
+  <div class="section">
+    <h2>5. Send Instruction to Your Bot</h2>
+    <p>Type what you want your bot to negotiate with Arturo's bot.</p>
+    <input type="text" id="messageInput" placeholder="Ej: Dile a Arturo que la cita es el martes...">
+    <button onclick="sendMessage()" style="background: #10b981;">Send to Bot A</button>
+  </div>
+
+  <h2>Autonomous Negotiation Log</h2>
+  <div id="logs"></div>
+</div>
+
+<script>
+  const API_URL = 'http://localhost:3000/api';
+  const SOCKET_URL = 'http://localhost:3000';
+  let userAId = null;
+  let userBId = null;
+  let chatId = null;
+  let socket = null;
+
+  function log(msg) {
+    const logs = document.getElementById('logs');
+    logs.innerHTML += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
+    logs.scrollTop = logs.scrollHeight;
+  }
+
+  async function createUser(suffix) {
+    const name = document.getElementById(`userName${suffix}`).value;
+    const aiPersona = document.getElementById(`aiPersona${suffix}`).value;
+    try {
+      const res = await fetch(`${API_URL}/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, aiPersona })
+      });
+      const data = await res.json();
+      if(data.id) {
+        if(suffix === 'A') userAId = data.id; else userBId = data.id;
+        document.getElementById(`userId${suffix}`).innerText = data.id;
+        document.getElementById(`userId${suffix}`).style.color = 'green';
+        log(`User ${suffix} created. ID: ${data.id}`);
+      }
+    } catch (e) { log(`Error: ${e.message}`); }
+  }
+
+  async function createChat() {
+    if(!userAId || !userBId) return alert("Create both users first!");
+    try {
+      const res = await fetch(`${API_URL}/chats`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userIds: [userAId, userBId] })
+      });
+      const data = await res.json();
+      if(data.id) {
+        chatId = data.id;
+        document.getElementById('chatIdDisplay').innerText = chatId;
+        document.getElementById('chatIdDisplay').style.color = 'green';
+        log(`Chat created. ID: ${chatId}`);
+      } else {
+        log(`Error: ${JSON.stringify(data)}`);
+      }
+    } catch (e) { log(`Fetch Error: ${e.message}`); }
+  }
+
+  async function uploadManifest() {
+    if(!chatId) return alert("Please create chat first!");
+    const content = document.getElementById('manifestContent').value;
+    log("Uploading and generating embedding for manifest... wait...");
+    try {
+      const res = await fetch(`${API_URL}/chats/${chatId}/manifest`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content })
+      });
+      const data = await res.json();
+      log(`Manifest Response: ${data.message || JSON.stringify(data)}`);
+    } catch (e) { log(`Fetch Error: ${e.message}`); }
+  }
+
+  function connectSocket() {
+    if(!chatId) return alert("Please create and get a Chat ID first!");
+    if(socket) {
+      socket.disconnect();
+      log("Disconnected old socket");
+    }
+
+    log("Connecting to WebSocket...");
+    socket = io(SOCKET_URL);
+
+    socket.on('connect', () => {
+      log('Connected! Socket ID: ' + socket.id);
+      socket.emit('joinChat', chatId);
+      log(`Emitted 'joinChat' for room: ${chatId}`);
+    });
+
+    socket.on('newMessage', (data) => {
+      log(`> EVENT newMessage: [${data.isAi ? 'AGENT' : 'USER'}] ${data.content}`);
+    });
+
+    socket.on('agentStatus', (data) => {
+      log(`> EVENT agentStatus: ${data.status}`);
+    });
+
+    socket.on('manifestUpdated', (data) => {
+      log(`> EVENT manifestUpdated! New content: "${data.newContent}"`);
+    });
+
+    socket.on('disconnect', () => {
+      log('Disconnected from server.');
+    });
+
+    socket.on('error', (err) => {
+      log(`> EVENT error: ${err}`);
+    });
+  }
+
+  function sendMessage() {
+    if(!socket || !socket.connected) return alert("Please connect socket first!");
+    if(!chatId || !userAId) return alert("Missing chatId or User A ID!");
+    
+    const content = document.getElementById('messageInput').value;
+    if(!content.trim()) return;
+
+    const payload = { chatId, userId: userAId, content };
+    log(`Emitting 'sendMessage': Payload = ${JSON.stringify(payload)}`);
+    socket.emit('sendMessage', payload);
+    document.getElementById('messageInput').value = '';
+  }
+</script>
+</body>
+</html>

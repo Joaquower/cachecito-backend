@@ -1,0 +1,46 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  extensions = [vector]
+}
+
+model User {
+  id        String    @id @default(uuid())
+  name      String
+  aiPersona String    // Ej. "Negociador estricto pero razonable"
+  chats     Chat[]    @relation("ChatUsers")
+  messages  Message[]
+  createdAt DateTime  @default(now())
+}
+
+model Chat {
+  id              String           @id @default(uuid())
+  users           User[]           @relation("ChatUsers")
+  projectManifest ProjectManifest?
+  messages        Message[]
+  createdAt       DateTime         @default(now())
+}
+
+model ProjectManifest {
+  id        String                       @id @default(uuid())
+  content   String                       // Documento del acuerdo
+  embedding Unsupported("vector(1536)")? // Embebido desde OpenAI text-embedding-3-small
+  chatId    String                       @unique
+  chat      Chat                         @relation(fields: [chatId], references: [id])
+  updatedAt DateTime                     @updatedAt
+}
+
+model Message {
+  id        String   @id @default(uuid())
+  content   String
+  isAi      Boolean  @default(false)
+  chatId    String
+  userId    String
+  chat      Chat     @relation(fields: [chatId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+}
