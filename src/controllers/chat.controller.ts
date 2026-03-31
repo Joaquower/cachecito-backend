@@ -47,3 +47,24 @@ export async function uploadManifest(req: Request, res: Response) {
     res.status(500).json({ error: 'Server error' });
   }
 }
+
+export async function getChatDetail(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+    const chat = await prisma.chat.findUnique({
+      where: { id },
+      include: {
+        users: true,
+        messages: {
+          orderBy: { createdAt: 'asc' }
+        },
+        projectManifest: true
+      }
+    });
+    if (!chat) return res.status(404).json({ error: 'Chat not found' });
+    res.status(200).json(chat);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Server error' });
+  }
+}
