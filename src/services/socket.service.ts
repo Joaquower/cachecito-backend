@@ -3,28 +3,40 @@ import { prisma } from './db.service';
 import { agentGraph } from '../agents/graph';
 import { HumanMessage, AIMessage } from '@langchain/core/messages';
 
-const MAX_TURNS = 6;
+const MAX_TURNS = 8;
+// Semáforo simple para evitar que dos turnos corran al mismo tiempo en el mismo chat
+const activeChats = new Set<string>();
 
-async function triggerAgentTurn(io: Server, chatId: string, userId: string, lastMessage: string, turnCount: number) {
+async function triggerAgentTurn(io: Server, chatId: string, userId: string, lastMessage: string, turnCount: number, isInitialHumanMessage: boolean = false) {
   if (turnCount >= MAX_TURNS) {
     io.to(chatId).emit('agentStatus', { status: "Límite de turnos alcanzado. Negociación pausada." });
+    activeChats.delete(chatId);
     return;
   }
 
+  // Si no es el mensaje inicial del humano y ya hay alguien procesando, abortamos este disparo redundante
+  if (!isInitialHumanMessage && activeChats.has(chatId)) {
+    console.log(`Chat ${chatId} busy, skipping redundant trigger`);
+    return;
+  }
+
+  activeChats.add(chatId);
+
   try {
     const user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user) return;
+    if (!user) {
+      activeChats.delete(chatId);
+      return;
+    }
 
-    // 1. Obtener historial para ver quién envió el último mensaje real
-    const lastMsgs = await prisma.message.findMany({
-      where: { chatId },
-      orderBy: { createdAt: 'desc' },
-      take: 2
-    });
+    // 1. Detección de saludos simples para no entrar en negociación pesada
+    const lowercaseMsg = lastMessage.toLowerCase().trim();
+    const isJustGreeting = /^(hola|buenos dias|buenas tardes|saludos|que tal|hi|hello)$/i.test(lowercaseMsg);
 
-    // Si el último mensaje YA fue de este mismo usuario/IA, no respondemos otra vez (evita loops)
-    if (lastMsgs.length > 0 && lastMsgs[0].userId === userId && lastMsgs[0].isAi) {
-      console.log(`Aborting turn for ${user.name} to prevent same-agent loop`);
+    // Si es un saludo y no es el primer turno, paramos el loop
+    if (isJustGreeting && turnCount > 0) {
+      console.log("Just a greeting, stopping autonomous loop.");
+      activeChats.delete(chatId);
       return;
     }
 
@@ -33,7 +45,7 @@ async function triggerAgentTurn(io: Server, chatId: string, userId: string, last
     const rawMessages = await prisma.message.findMany({
       where: { chatId },
       orderBy: { createdAt: 'asc' },
-      take: 30
+      take: 40
     });
 
     const history = rawMessages.map((m: any) => 
@@ -51,7 +63,6 @@ async function triggerAgentTurn(io: Server, chatId: string, userId: string, last
     const finalState = await agentGraph.invoke(initialState);
     const finalResponse = finalState.negotiatorResponse;
 
-    // 2. Guardar mensaje de la IA con SU ID de usuario para saber quién habló
     const aiMessage = await prisma.message.create({
       data: { content: finalResponse, isAi: true, chatId, userId }
     });
@@ -62,24 +73,27 @@ async function triggerAgentTurn(io: Server, chatId: string, userId: string, last
       io.to(chatId).emit('manifestUpdated', { newContent: finalState.newManifestContent });
     }
 
+    // Liberamos el chat para que el siguiente pueda entrar
+    activeChats.delete(chatId);
+
     // --- Autonomous Loop: Trigger the OTHER agent ---
     const chat = await prisma.chat.findUnique({
       where: { id: chatId },
       include: { users: true }
     });
 
-    if (chat && chat.users.length > 1) {
+    if (chat && chat.users.length > 1 && !isJustGreeting) {
       const otherUser = chat.users.find(u => u.id !== userId);
       if (otherUser) {
-        console.log(`Scheduling next turn for: ${otherUser.name}`);
-        // Delay más largo para evitar colisiones y dar realismo
+        console.log(`Next turn scheduled for: ${otherUser.name}`);
         setTimeout(() => {
           triggerAgentTurn(io, chatId, otherUser.id, finalResponse, turnCount + 1);
-        }, 6000);
+        }, 5000);
       }
     }
   } catch (err) {
     console.error("Error in agent turn:", err);
+    activeChats.delete(chatId);
   }
 }
 
@@ -96,14 +110,31 @@ export function initSocket(io: Server) {
       const { chatId, userId, content } = data;
 
       try {
-        // 1. Save and emit user message
+        // Bloqueamos el chat para el humano
+        if (activeChats.has(chatId)) {
+          socket.emit('error', 'Por favor espera a que la negociación termine');
+          return;
+        }
+
+        // 1. Guardar mensaje humano
         const userMsg = await prisma.message.create({
           data: { content, isAi: false, chatId, userId }
         });
         io.to(chatId).emit('newMessage', userMsg);
 
-        // 2. Start the autonomous turn-based negotiation
-        await triggerAgentTurn(io, chatId, userId, content, 0);
+        // 2. Iniciar cadena (buscamos al OTRO usuario para que responda al humano)
+        const chat = await prisma.chat.findUnique({
+          where: { id: chatId },
+          include: { users: true }
+        });
+
+        if (chat && chat.users.length > 1) {
+          const otherUser = chat.users.find(u => u.id !== userId);
+          if (otherUser) {
+            // El human message dispara el primer turno de la IA contraparte
+            await triggerAgentTurn(io, chatId, otherUser.id, content, 0, true);
+          }
+        }
 
       } catch (err) {
         console.error(err);
