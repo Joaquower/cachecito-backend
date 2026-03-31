@@ -42,29 +42,29 @@ export async function negotiatorNode(state: AgentState): Promise<Partial<AgentSt
   const { userMessage, aiPersona, manifestContext, messages } = state;
 
   const systemMsg = new SystemMessage(
-    `Eres un NEGOCIADOR DE IA (BOT) representando los intereses de un usuario.
-Tu personalidad y directrices son: ${aiPersona}
+    `Eres un NEGOCIADOR DE IA ESTRATÉGICO. Representas a: ${aiPersona}.
+    
+    TU MISIÓN: Llegar a un acuerdo definitivo sobre los puntos pendientes usando el MENOR número de mensajes posible.
+    
+    REGLAS DE ORO:
+    1. PROGRESO CONTINUO: No repitas saludos ("Hola", "Miau", "¿Cómo puedo ayudarte?"). Si ya saludaste, ve DIRECTO al punto.
+    2. CONCISIÓN: Responde de forma clara y ejecutiva. No uses relleno. No repitas lo que la otra IA ya dijo.
+    3. DETECCION DE ACUERDO: Si la otra IA propone algo aceptable según tus directrices, di "ACEPTO" y propón el manifiesto final.
+    4. ÚNICA FUENTE DE VERDAD: El ProjectManifest es lo que importa.
+    Acuerdo actual: ${manifestContext}
 
-MODO DE OPERACIÓN (B2B):
-1. Te estás comunicando directamente con la IA de otra persona o recibiendo instrucciones de tu propio usuario.
-2. Tu objetivo es llegar a un consenso práctico y beneficioso.
-3. El "ProjectManifest" es la única fuente de verdad compartida. Es una LISTA NUMERADA de acuerdos. Actual acuerdo:
-${manifestContext}
+    SI LA OTRA IA SOLO SALUDA Y NO PROPONE NADA: Propón tú el primer punto de la negociación basado en lo que el usuario pidió inicialmente: "${userMessage}".
 
-INSTRUCCIONES DE RESPUESTA:
-- USA LAS HERRAMIENTAS DE BÚSQUEDA para investigar ubicaciones reales, clima actual, precios o cualquier dato externo relevante. NO simules datos.
-- Si llegas a un acuerdo sobre un punto específico, propón la actualización del manifiesto.
-
-FORMATO DE ACTUALIZACIÓN (OBLIGATORIO SI HAY CAMBIOS):
-Para actualizar el manifiesto, añade EXACTAMENTE esto al final de tu mensaje final (después de usar herramientas):
-<<<UPDATE_MANIFEST>>>
-1. [Primer acuerdo]
-2. [Segundo acuerdo]
-... (Escribe la LISTA COMPLETA con los cambios aplicados)`
+    FORMATO DE ACTUALIZACIÓN:
+    Para modificar el manifiesto, añade esto al final:
+    <<<UPDATE_MANIFEST>>>
+    1. [Punto acordado 1]
+    2. [Punto acordado 2]...`
   );
 
-  // If messages is empty, start with the system message and user message
-  const inputMessages = messages.length === 0 ? [systemMsg, new HumanMessage(userMessage)] : [systemMsg, ...messages];
+  // Filtrar mensajes para no enviar un historial gigante de basura
+  const recentMessages = messages.slice(-10);
+  const inputMessages = [systemMsg, ...recentMessages];
   
   const response = await llm.invoke(inputMessages);
 
